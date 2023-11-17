@@ -45,7 +45,8 @@ class VanillaBert(nn.Module):
             domains: torch.LongTensor = None,
             labels: torch.LongTensor = None):
 
-        return self.bert(input_ids, attention_mask=attention_mask, labels=labels)
+        out = self.bert(input_ids, attention_mask=attention_mask, labels=labels)
+        return out[:2]
 
 
 class DomainAdversarialBert(nn.Module):

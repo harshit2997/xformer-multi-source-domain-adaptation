@@ -11,17 +11,24 @@ from collections import Counter
 from scipy.stats import entropy
 import ipdb
 
-from datareader import collate_batch_transformer
+from datareader import collate_batch_transformer, collate_batch_transformer_with_index_and_text
 
 
-def accuracy(logits: np.ndarray, labels: np.ndarray) -> float:
-    return np.sum(np.argmax(logits, axis=-1) == labels).astype(np.float32) / float(labels.shape[0])
+def accuracy(logits: np.ndarray, labels: np.ndarray,  texts:List=None) -> float:
+    preds = np.argmax(logits, axis=-1)
+
+    if texts is not None:
+        for i in range(labels.shape[0]):
+            if preds[i]!=labels[i]:
+                print (texts[i], preds[i], labels[i])
+
+    return np.sum(preds == labels).astype(np.float32) / float(labels.shape[0])
 
 
-def acc_f1(logits: List, labels: List) -> Tuple[float, float, float, float]:
+def acc_f1(logits: List, labels: List, texts:List=None) -> Tuple[float, float, float, float]:
     logits = np.asarray(logits).reshape(-1, len(logits[0]))
     labels = np.asarray(labels).reshape(-1)
-    acc = accuracy(logits, labels)
+    acc = accuracy(logits, labels, texts)
     average = 'binary' if logits.shape[1] == 2 else None
     P, R, F1, _ = precision_recall_fscore_support(labels, np.argmax(logits, axis=-1), average=average)
     return acc,P,R,F1
@@ -56,7 +63,7 @@ class ClassificationEvaluator:
         self.dataloader = DataLoader(
             dataset,
             batch_size=8,
-            collate_fn=collate_batch_transformer
+            collate_fn=collate_batch_transformer_with_index_and_text
         )
         self.device = device
         self.stored_labels = []
@@ -94,12 +101,16 @@ class ClassificationEvaluator:
             logits_all = []
             losses_all = []
             votes_all = []
-            for batch in tqdm(self.dataloader, desc="Evaluation"):
-                batch = tuple(t.to(self.device) for t in batch)
+            texts_all = []
+
+            for obatch in tqdm(self.dataloader, desc="Evaluation"):
+                batch = tuple(t.to(self.device) for t in obatch[:4])
                 input_ids = batch[0]
                 masks = batch[1]
                 labels = batch[2]
                 domains = batch[3] if self.use_domain else None
+                texts = obatch[5]
+
                 if self.use_labels:
                     loss, logits = model(input_ids, attention_mask=masks, domains=domains, labels=labels)
                     if len(loss.size()) > 0:
@@ -109,6 +120,7 @@ class ClassificationEvaluator:
                     loss = torch.FloatTensor([-1.])
                 labels_all.extend(list(labels.detach().cpu().numpy()))
                 logits_all.extend(list(logits.detach().cpu().numpy()))
+                texts_all.extend(texts)
                 losses_all.append(loss.item())
                 if hasattr(model, 'votes'):
                     votes_all.extend(model.votes.detach().cpu().numpy())
@@ -116,7 +128,7 @@ class ClassificationEvaluator:
             if not self.use_labels:
                 return logits_all
 
-            acc,P,R,F1 = acc_f1(logits_all, labels_all)
+            acc,P,R,F1 = acc_f1(logits_all, labels_all, texts_all)
             loss = sum(losses_all) / len(losses_all)
 
             # Plotting

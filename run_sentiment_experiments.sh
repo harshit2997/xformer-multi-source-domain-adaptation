@@ -55,7 +55,7 @@ for i in 1000,1 1001,2 666,3 7,4 50,5; do IFS=","; set -- $i;
     --supervision_layer 3 \
     --indices_dir ${indices_dir}
 
-  # 4) Independent-Avg
+  # 4, 5) Independent-Avg and Independent-Ft
   python emnlp_final_experiments/sentiment-analysis/train_multi_view_averaging_individuals.py \
     --dataset_loc data/sentiment-dataset \
     --train_pct 0.9 \
@@ -70,20 +70,6 @@ for i in 1000,1 1001,2 666,3 7,4 50,5; do IFS=","; set -- $i;
     --lr 0.00003 \
     --indices_dir ${indices_dir}
   avg_model=`ls -d -t ${model_dir}/distilbert_ensemble_averaging_individuals/*/ | head -1`
-
-  # 5) Independent-Ft
-  python emnlp_final_experiments/sentiment-analysis/train_multi_view_selective_weighting.py \
-    --dataset_loc data/sentiment-dataset \
-    --train_pct 0.9 \
-    --n_gpu 1 \
-    --n_epochs 30 \
-    --domains books dvd electronics kitchen_\&_housewares \
-    --seed ${1} \
-    --run_name "distilbert-ensemble-selective-attention-${2}" \
-    --model_dir ${model_dir}/distilbert_ensemble_selective_attention \
-    --tags ${tags} \
-    --pretrained_model ${avg_model} \
-    --indices_dir ${indices_dir}
 
   # 6) MoE-DC
   python emnlp_final_experiments/sentiment-analysis/train_multi_view_domainclassifier_individuals.py \

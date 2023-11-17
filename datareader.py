@@ -54,9 +54,9 @@ def text_to_batch_transformer(text: List, tokenizer: PreTrainedTokenizer, text_p
     :return: A list of IDs and a mask
     """
     if text_pair is None:
-        input_ids = [tokenizer.encode(t, add_special_tokens=True, max_length=tokenizer.max_len) for t in text]
+        input_ids = [tokenizer.encode(t, add_special_tokens=True, max_length=tokenizer.model_max_length) for t in text]
     else:
-        input_ids = [tokenizer.encode(t, text_pair=p, add_special_tokens=True, max_length=tokenizer.max_len) for t,p in zip(text, text_pair)]
+        input_ids = [tokenizer.encode(t, text_pair=p, add_special_tokens=True, max_length=tokenizer.model_max_length) for t,p in zip(text, text_pair)]
 
     masks = [[1] * len(i) for i in input_ids]
 
@@ -79,8 +79,8 @@ def collate_batch_transformer(input_data: Tuple) -> Tuple[torch.Tensor, torch.Te
     return torch.tensor(input_ids), torch.tensor(masks), torch.tensor(labels), torch.tensor(domains)
 
 
-def collate_batch_transformer_with_index(input_data: Tuple) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List]:
-    return collate_batch_transformer(input_data) + ([i[-1] for i in input_data],)
+def collate_batch_transformer_with_index_and_text(input_data: Tuple) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List, List]:
+    return collate_batch_transformer(input_data) + ([i[-2] for i in input_data],[i[-1] for i in input_data],)
 
 
 def read_xml(dir: AnyStr, domain: AnyStr, split: AnyStr = 'positive'):
@@ -153,6 +153,54 @@ class MultiDomainSentimentDataset(Dataset):
         label = row[1]
         domain = row[2]
         return input_ids, mask, label, domain, item
+
+class MultiDomainSentimentDatasetWithText(Dataset):
+    """
+    Implements a dataset for the multidomain sentiment analysis dataset
+    """
+    def __init__(
+            self,
+            dataset_dir: AnyStr,
+            domains: List,
+            tokenizer: PreTrainedTokenizer,
+            domain_ids: List = None
+    ):
+        """
+
+        :param dataset_dir: The base directory for the dataset
+        :param domains: The set of domains to load data for
+        :param: tokenizer: The tokenizer to use
+        :param: domain_ids: A list of ids to override the default domain IDs
+        """
+        super(MultiDomainSentimentDatasetWithText, self).__init__()
+        data = []
+        for domain in domains:
+            data.extend(read_xml(dataset_dir, domain, 'positive'))
+            data.extend(read_xml(dataset_dir, domain, 'negative'))
+
+        self.dataset = pd.DataFrame(data)
+        if domain_ids is not None:
+            for i in range(len(domain_ids)):
+                data[data['domain'] == domain_map[domains[i]]][2] = domain_ids[i]
+        self.tokenizer = tokenizer
+
+    def set_domain_id(self, domain_id):
+        """
+        Overrides the domain ID for all data
+        :param domain_id:
+        :return:
+        """
+        self.dataset['domain'] = domain_id
+
+    def __len__(self):
+        return self.dataset.shape[0]
+
+    def __getitem__(self, item) -> Tuple:
+        row = self.dataset.values[item]
+        input_ids, mask = text_to_batch_transformer([row[0]], self.tokenizer)
+        label = row[1]
+        domain = row[2]
+        return input_ids, mask, label, domain, item, row[0]
 
 
 class MultiDomainTwitterDataset(Dataset):
