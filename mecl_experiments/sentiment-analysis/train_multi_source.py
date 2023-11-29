@@ -63,7 +63,7 @@ def configuration():
     # training configs
     # parser.add_argument('--resume', type=str, default='', metavar='PATH')
     # parser.add_argument('--iters', type=int, default=12000)
-    parser.add_argument('--seed', type=int, default=1)
+    # parser.add_argument('--seed', type=int, default=1)
     # parser.add_argument('--print-freq', type=int, default=50)
     # parser.add_argument('--save-freq', type=int, default=2000)
     # parser.add_argument('--refresh-freq', type=int, default=1000)
