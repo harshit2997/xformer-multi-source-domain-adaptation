@@ -6,8 +6,8 @@ from collections import OrderedDict
 import numpy as np
 import torch
 
-from reid.utils import to_torch, to_numpy
-from reid.utils.meters import AverageMeter
+from utils import to_torch, to_numpy
+from utils.meters import AverageMeter
 
 
 class Evaluator(object):

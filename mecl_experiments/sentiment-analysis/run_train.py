@@ -19,9 +19,8 @@ from torch.utils.data import random_split
 from torch.optim import Adam
 from tqdm import tqdm
 from transformers import AdamW
-from transformers import DistilBertConfig
 from transformers import DistilBertTokenizer
-from transformers import DistilBertForSequenceClassification
+from transformers import AutoModel
 from transformers import get_linear_schedule_with_warmup
 
 from datareader import MultiDomainSentimentDataset
@@ -35,7 +34,7 @@ from model import MultiTransformerClassifier
 from model import VanillaBert
 from model import *
 from sklearn.model_selection import ParameterSampler
-
+from multi_source_trainer_nlp import MultiSourceTrainer
 
 def train(
         model: torch.nn.Module,
@@ -175,7 +174,17 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="Name of the model to run", default="VanillaBert")
     parser.add_argument("--indices_dir", help="If standard splits are being used", type=str, default=None)
     parser.add_argument("--ensemble_basic", help="Use averaging for the ensembling method", action="store_true")
+    # alpha scheduler
+    parser.add_argument('--alpha-scheduler', type=str, default='constant', choices=['step', 'constant'])
+    parser.add_argument('--alpha-milestones', nargs='+', type=int, default=[4000, 8000])
+    parser.add_argument('--alpha', type=float, default=0.1)
 
+    # uniform loss
+    parser.add_argument('--uniform_weight', type=float, default=0.1)
+    parser.add_argument('--unif_t', type=float, default=2.0)
+    parser.add_argument('--q_size', type=int, default=16)
+
+    parser.add_argument('--re_weight', type=float, default=0.25)
 
     args = parser.parse_args()
 
@@ -200,7 +209,6 @@ if __name__ == "__main__":
     lr = args.lr
     weight_decay = args.weight_decay
     n_epochs = args.n_epochs
-    bert_config = DistilBertConfig.from_pretrained(bert_model, num_labels=2, output_hidden_states=True)
 
 
     # wandb initialization
@@ -250,7 +258,7 @@ if __name__ == "__main__":
     labels_all_avg = []
     logits_all_avg = []
 
-    for i in range(len(all_dsets)):
+    for i in range(len(all_dsets)):  # permutation loop
         domain = args.domains[i]
         test_dset = all_dsets[i]
         # Override the domain IDs
@@ -294,11 +302,53 @@ if __name__ == "__main__":
         # validation_evaluators = [MultiDatasetClassificationEvaluator([vds], device) for vds in val_ds] + [MultiDatasetClassificationEvaluator(val_ds, device, use_domain=False)]
 
         ##### Create models, schedulers, optimizers
+        models = []
+        for j in range(len(train_dls)):
+            models.append(AutoModel.from_pretrained(bert_model))
+
+        model_optimizers = []
+        for j in range(len(train_dls)):
+            model_optimizers.append(AdamW(models[j].parameters(), lr=lr, weight_decay=weight_decay))
+
+        model_schedulers = []
+        for j in range(len(train_dls)):
+            model_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
+
+        mlps = []
+        for j in range(len(train_dls)):
+            mlps.append(MLP(768, 768, 2))
+
+        mlps_optimizers = []
+        for j in range(len(train_dls)):
+            mlps_optimizers.append(AdamW(mlps[j].parameters(), lr=lr, weight_decay=weight_decay))
+
+        mlps_schedulers = []
+        for j in range(len(train_dls)):
+            mlps_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
+        
+        classifiers = []
+        for j in range(len(train_dls)):
+            classifiers.append(Classifier(768, 2))
+        
+        classifiers_optimizers = []
+        for j in range(len(train_dls)):
+            classifiers_optimizers.append(AdamW(classifiers[j].parameters(), lr=lr, weight_decay=weight_decay))
+        
+        classifiers_schedulers = []
+        for j in range(len(train_dls)):
+            classifiers_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
+
+
+        
 
         ##### Call train and return expert model
-        expert_model = None
+        trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
-        evaluator = #### Create evaluator and call evaluation to get P, R, F1, acc, labels, logits, loss
+        trainer.train_multi_source(train_dls,val_ds, test_dset)
+        expert_model = trainer.ema_model
+        expert_classifier = trainer.ema_cls
+
+        #evaluator = #### Create evaluator and call evaluation to get P, R, F1, acc, labels, logits, loss
         P, R,F1,acc, labels, logits, loss = None
 
         print(f"{domain} F1: {F1}")

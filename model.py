@@ -1391,3 +1391,27 @@ class NLICNN(torch.nn.Module):
 
         return output
 
+
+class Classifier(nn.Module):
+    def __init__(self, num_features, num_classes=2):
+        super(Classifier, self).__init__()
+        self.classifier = nn.Linear(num_features, num_classes, bias=False)
+        init.normal_(self.classifier.weight, std=0.001)
+
+    def forward(self, x):
+        logits = self.classifier(x)
+        return logits
+
+class MLP(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(MLP, self).__init__()
+        self.projector = nn.Sequential(
+            nn.Linear(in_features, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, out_features)
+        )
+
+    def forward(self, x):
+        x = self.projector(x)
+        return x

@@ -173,7 +173,7 @@ class MultiSourceTrainer:
 
         return self.args.re_weight*(loss_mse + loss_mse_test) + self.args.uniform_weight*loss_uniform + (loss_test + loss) / 2
 
-    def train_multi_source(self, data_loaders, test_loader=None, query=None, gallery=None):
+    def train_multi_source(self, data_loaders, val_ds, test_ds):
         end = time.time()
         best_mAP, best_iter = 0, 0
 
@@ -182,7 +182,7 @@ class MultiSourceTrainer:
             self._refresh_information(current_iter, lr=self.model_schedulers[0].get_lr()[0])
             self.data_time.update(time.time() - end)
 
-            inputs_list, targets_list = self._parse_data(inputs_data)
+            # inputs_list, targets_list = self._parse_data(inputs_data)
 
             ema_features = []
             ema_targets = []
@@ -239,7 +239,8 @@ class MultiSourceTrainer:
             self._logging(current_iter)
 
             if current_iter % self.args.save_freq == 0 and dist.get_rank() == 0:
-                if test_loader is not None:
+                # CHANGE EVAL
+                if test_loader is not None:  
                     for idx in range(self.num_domains):
                         mAP, rank1 = self._do_valid(self.models[idx], test_loader, query, gallery)
                         if best_mAP < mAP:
