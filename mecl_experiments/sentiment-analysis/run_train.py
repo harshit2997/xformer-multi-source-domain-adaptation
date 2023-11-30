@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import wandb
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.data import Subset
 from torch.utils.data import random_split
 from torch.optim import Adam
@@ -30,8 +30,7 @@ from metrics import ClassificationEvaluator
 from metrics import acc_f1
 
 from metrics import plot_label_distribution
-from model import MultiTransformerClassifier
-from model import VanillaBert
+from model import DistilBertFeatureExtractor
 from model import *
 from sklearn.model_selection import ParameterSampler
 from multi_source_trainer_nlp import MultiSourceTrainer
@@ -164,6 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", help="Where to store the saved model", default="wandb_local", type=str)
     parser.add_argument("--tags", nargs='+', help='A list of tags for this run', default=[])
     parser.add_argument("--batch_size", help="The batch size", type=int, default=16)
+    parser.add_argument('--max_iter', type=int, default=10000)
     parser.add_argument("--lr", help="Learning rate", type=float, default=1e-5)
     parser.add_argument("--weight_decay", help="l2 reg", type=float, default=0.01)
     parser.add_argument("--n_heads", help="Number of transformer heads", default=6, type=int)
@@ -290,12 +290,14 @@ if __name__ == "__main__":
             subsets = [[Subset(dset_choices[d], subset_indices[d][0]), Subset(dset_choices[d], subset_indices[d][1])] for d in
                        subset_indices]
 
+        samplers = [RandomSampler(subset[0], replacement=True, num_samples=args.max_iter*batch_size) for subset in subsets]
+
         train_dls = [DataLoader(
-            subset[0],
+            subsets[i][0],
             batch_size=batch_size,
-            shuffle=True,
+            sampler = samplers[i],
             collate_fn=collate_batch_transformer
-        ) for subset in subsets]
+        ) for i in range(len(subsets))]
 
         val_ds = [subset[1] for subset in subsets]
 
@@ -304,7 +306,7 @@ if __name__ == "__main__":
         ##### Create models, schedulers, optimizers
         models = []
         for j in range(len(train_dls)):
-            models.append(AutoModel.from_pretrained(bert_model))
+            models.append(DistilBertFeatureExtractor(bert_model).cuda())
 
         model_optimizers = []
         for j in range(len(train_dls)):
@@ -316,7 +318,7 @@ if __name__ == "__main__":
 
         mlps = []
         for j in range(len(train_dls)):
-            mlps.append(MLP(768, 768, 2))
+            mlps.append(MLP(768, 768, 2).cuda())
 
         mlps_optimizers = []
         for j in range(len(train_dls)):
@@ -328,7 +330,7 @@ if __name__ == "__main__":
         
         classifiers = []
         for j in range(len(train_dls)):
-            classifiers.append(Classifier(768, 2))
+            classifiers.append(Classifier(768, 2).cuda())
         
         classifiers_optimizers = []
         for j in range(len(train_dls)):
@@ -344,7 +346,7 @@ if __name__ == "__main__":
         ##### Call train and return expert model
         trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
-        trainer.train_multi_source(train_dls,val_ds, test_dset)
+        trainer.train_multi_source(zip(*train_dls),val_ds, test_dset)
         expert_model = trainer.ema_model
         expert_classifier = trainer.ema_cls
 

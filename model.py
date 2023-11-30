@@ -14,6 +14,7 @@ from torch.nn import functional as F
 from transformers import PreTrainedTokenizer
 from torch.nn import init
 from argparse import Namespace
+from transformers import AutoModel
 
 
 class GradientReversal(torch.autograd.Function):
@@ -1415,3 +1416,33 @@ class MLP(nn.Module):
     def forward(self, x):
         x = self.projector(x)
         return x
+    
+class DistilBertFeatureExtractor(nn.Module):
+
+    def __init__(
+            self,
+            model_name,
+    ):
+        super(DistilBertFeatureExtractor, self).__init__()
+        self.bert= AutoModel.from_pretrained(model_name)
+        self.feat_bn = nn.BatchNorm1d(768)
+
+    def forward(
+            self,
+            input_ids: torch.LongTensor,
+            attention_mask: torch.LongTensor,
+            training = False
+    ):
+
+        feats = self.bert(input_ids, attention_mask=attention_mask).last_hidden_state[:,0,:]
+
+        bn_feat = self.feat_bn(feats)
+
+        if not self.training:
+            if training:
+                return bn_feat
+            bn_feat = F.normalize(bn_feat)
+            return bn_feat
+        
+        return feats, bn_feat
+

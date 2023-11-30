@@ -14,6 +14,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 
+
 from evaluation.evaluators import Evaluator
 from loss import TripletLoss
 from loss.uniformity_loss import Uniformity
@@ -22,7 +23,7 @@ from meta_modules.module import MetaModule
 from utils import accuracy
 from utils.meters import AverageMeter
 from utils.serialization import save_checkpoint
-
+from torch.nn import functional as F
 
 class MultiSourceTrainer:
     def __init__(self, models, classifiers, mlps, model_optimizers, classifier_optimizers, mlp_optimizers, model_schedulers,
@@ -100,14 +101,18 @@ class MultiSourceTrainer:
     def _parse_data(inputs_data):
         inputs_list = []
         targets_list = []
+        masks_list = []
+
         for item in inputs_data:
-            imgs, _, pids, _, _ = item
-            inputs = imgs.cuda()
-            targets = pids.cuda()
+            input_ids, masks, labels, domains = item
+            inputs = input_ids.cuda()
+            targets = labels.cuda()
+            masks = masks.cuda()
             inputs_list.append(inputs)
             targets_list.append(targets)
+            masks_list.append(masks)
 
-        return inputs_list, targets_list
+        return inputs_list, targets_list, masks_list
 
     def _get_align_loss(self, feature, target):
         feature = torch.nn.functional.normalize(feature)
@@ -115,16 +120,17 @@ class MultiSourceTrainer:
         loss = torch.mean(2 - 2 * torch.sum(feature*target, dim=1))
         return loss
 
-    def run(self, meta_train_index, meta_test_index, inputs_list, targets_list, current_iter, target_features):
+    def run(self, meta_train_index, meta_test_index, inputs_list, targets_list, masks_list, current_iter, target_features):
         # meta train
         feat = self.models[meta_train_index]
         cls = self.classifiers[meta_train_index]
         mlp = self.mlps[meta_train_index]
         inputs_train = inputs_list[meta_train_index]
         targets_train = targets_list[meta_train_index]
+        masks_train = masks_list[meta_train_index]
 
         self.set_requires_grad(cls, True)
-        feature, bn_feature = feat(inputs_train)
+        feature, bn_feature = feat(inputs_train, attention_mask = masks_train)
 
         logits = cls(bn_feature)
 
@@ -182,7 +188,7 @@ class MultiSourceTrainer:
             self._refresh_information(current_iter, lr=self.model_schedulers[0].get_lr()[0])
             self.data_time.update(time.time() - end)
 
-            # inputs_list, targets_list = self._parse_data(inputs_data)
+            inputs_list, targets_list, masks_list = self._parse_data(inputs_data)
 
             ema_features = []
             ema_targets = []
@@ -191,18 +197,22 @@ class MultiSourceTrainer:
             with torch.no_grad():
                 for idx, inputs in enumerate(inputs_list):
                     targets = targets_list[idx]
-                    im_k, idx_unshuffle = self._batch_shuffle_ddp(inputs)
-                    features, bn_features = self.ema_model(im_k)
-                    features = self._batch_unshuffle_ddp(features, idx_unshuffle)
-                    bn_features = self._batch_unshuffle_ddp(bn_features, idx_unshuffle)
+                    masks = masks_list[idx]
+
+                    features, bn_features = self.ema_model(inputs, attention_mask = masks)
+
+                    # im_k, idx_unshuffle = self._batch_shuffle_ddp(inputs)
+                    # features, bn_features = self.ema_model(im_k)
+                    # features = self._batch_unshuffle_ddp(features, idx_unshuffle)
+                    # bn_features = self._batch_unshuffle_ddp(bn_features, idx_unshuffle)
                     targets_features.append(bn_features)
 
-                    tmp_feature_list = [torch.zeros_like(features) for i in range(dist.get_world_size())]
-                    tmp_targets_list = [torch.zeros_like(targets) for i in range(dist.get_world_size())]
-                    dist.all_gather(tmp_feature_list, features)
-                    dist.all_gather(tmp_targets_list, targets)
-                    features = torch.cat(tmp_feature_list, dim=0)
-                    targets = torch.cat(tmp_targets_list, dim=0)
+                    # tmp_feature_list = [torch.zeros_like(features) for i in range(dist.get_world_size())]
+                    # tmp_targets_list = [torch.zeros_like(targets) for i in range(dist.get_world_size())]
+                    # dist.all_gather(tmp_feature_list, features)
+                    # dist.all_gather(tmp_targets_list, targets)
+                    # features = torch.cat(tmp_feature_list, dim=0)
+                    # targets = torch.cat(tmp_targets_list, dim=0)
                     ema_features.append(features)
                     ema_targets.append(targets)
 
@@ -215,7 +225,7 @@ class MultiSourceTrainer:
                 random.seed(current_iter*10 + meta_train_index)
                 meta_test_index = random.sample(meta_test_candidates, 1)[0]
 
-                loss = self.run(meta_train_index, meta_test_index, inputs_list, targets_list, current_iter, targets_features)
+                loss = self.run(meta_train_index, meta_test_index, inputs_list, targets_list, masks_list, current_iter, targets_features)
                 self.model_optimizers[meta_train_index].zero_grad()
                 self.classifiers_optimizers[meta_train_index].zero_grad()
                 self.mlp_optimizers[meta_train_index].zero_grad()
@@ -239,20 +249,7 @@ class MultiSourceTrainer:
             self._logging(current_iter)
 
             if current_iter % self.args.save_freq == 0 and dist.get_rank() == 0:
-                # CHANGE EVAL
-                if test_loader is not None:  
-                    for idx in range(self.num_domains):
-                        mAP, rank1 = self._do_valid(self.models[idx], test_loader, query, gallery)
-                        if best_mAP < mAP:
-                            best_mAP = mAP
-                            best_iter = current_iter
-                            flag = idx
-
-                    mAP, rank1 = self._do_valid(self.ema_model, test_loader, query, gallery)
-                    if best_mAP < mAP:
-                        best_mAP = mAP
-                        best_iter = current_iter
-                        flag = self.num_domains+1
+                #### FILL EVAL HERE
 
                 for idx in range(self.num_domains):
                     save_checkpoint({'state_dict': self.models[idx].state_dict()},
