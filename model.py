@@ -15,7 +15,7 @@ from transformers import PreTrainedTokenizer
 from torch.nn import init
 from argparse import Namespace
 from transformers import AutoModel
-
+from .meta_modules import *
 
 class GradientReversal(torch.autograd.Function):
     """
@@ -1417,7 +1417,7 @@ class MLP(nn.Module):
         x = self.projector(x)
         return x
     
-class DistilBertFeatureExtractor(nn.Module):
+class DistilBertFeatureExtractor(MetaModule):
 
     def __init__(
             self,
@@ -1426,6 +1426,11 @@ class DistilBertFeatureExtractor(nn.Module):
         super(DistilBertFeatureExtractor, self).__init__()
         self.bert= AutoModel.from_pretrained(model_name)
         self.feat_bn = nn.BatchNorm1d(768)
+        self.feat_bn.bias.requires_grad_(False)
+        init.constant_(self.feat_bn.weight, 1.0)
+        init.constant_(self.feat_bn.bias, 0.0)
+        self.meta_convert(self)
+        self.meta_sequential_convert(self)
 
     def forward(
             self,
@@ -1446,3 +1451,49 @@ class DistilBertFeatureExtractor(nn.Module):
         
         return feats, bn_feat
 
+
+    def meta_convert(self, m):
+        for name, sub_module in m.named_children():
+            if isinstance(sub_module, nn.Conv2d):
+                new_module = MetaConv2d(sub_module.in_channels, sub_module.out_channels,
+                                        sub_module.kernel_size, sub_module.stride, sub_module.padding,
+                                        bias=sub_module.bias is not None)
+
+                state_dict = sub_module.state_dict()
+                new_module.load_state_dict(state_dict)
+                setattr(m, name, new_module)
+                continue
+            if isinstance(sub_module, nn.BatchNorm2d):
+                new_module = MetaBatchNorm2d(sub_module.num_features, affine=sub_module.affine)
+                state_dict = sub_module.state_dict()
+                new_module.load_state_dict(state_dict)
+                setattr(m, name, new_module)
+                continue
+            if isinstance(sub_module, nn.BatchNorm1d):
+                new_module = MetaBatchNorm1d(sub_module.num_features, affine=sub_module.affine)
+                state_dict = sub_module.state_dict()
+                new_module.load_state_dict(state_dict)
+                setattr(m, name, new_module)
+                continue
+            if isinstance(sub_module, nn.InstanceNorm2d):
+                new_module = MetaInstanceNorm2d(sub_module.num_features, affine=sub_module.affine)
+                state_dict = sub_module.state_dict()
+                new_module.load_state_dict(state_dict)
+                setattr(m, name, new_module)
+                continue
+            if isinstance(sub_module, nn.Linear):
+                new_module = MetaLinear(sub_module.in_features, sub_module.out_features, bias=sub_module.bias is not None)
+                state_dict = sub_module.state_dict()
+                new_module.load_state_dict(state_dict)
+                setattr(m, name, new_module)
+                continue
+
+            
+            self.meta_convert(sub_module)
+
+    def meta_sequential_convert(self, m):
+        for name, module in m.named_children():
+            self.meta_sequential_convert(module)
+            if isinstance(module, nn.Sequential):
+                new_module = MetaSequential(*module._modules.values())
+                setattr(m, name, new_module)
