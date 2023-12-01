@@ -25,7 +25,7 @@ from transformers import get_linear_schedule_with_warmup
 
 from datareader import MultiDomainSentimentDataset
 from datareader import collate_batch_transformer
-from metrics import MultiDatasetClassificationEvaluator
+from metrics import MultiDatasetClassificationEvaluator, MECLClassificationEvaluator
 from metrics import ClassificationEvaluator
 from metrics import acc_f1
 
@@ -301,7 +301,7 @@ if __name__ == "__main__":
 
         val_ds = [subset[1] for subset in subsets]
 
-        # validation_evaluators = [MultiDatasetClassificationEvaluator([vds], device) for vds in val_ds] + [MultiDatasetClassificationEvaluator(val_ds, device, use_domain=False)]
+        # validation_evaluators = [MultiDatasetClassificationEvaluator([vds], device) for vds in val_ds]
 
         ##### Create models, schedulers, optimizers
         models = []
@@ -350,7 +350,12 @@ if __name__ == "__main__":
         expert_model = trainer.ema_model
         expert_classifier = trainer.ema_cls
 
-        #evaluator = #### Create evaluator and call evaluation to get P, R, F1, acc, labels, logits, loss
+        #evaluator = 
+        models_to_evaluate = models + [expert_model]
+        for model in models_to_evaluate:
+            # Loop through models??
+            pass
+
         P, R,F1,acc, labels, logits, loss = None
 
         print(f"{domain} F1: {F1}")
