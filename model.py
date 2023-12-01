@@ -1436,10 +1436,12 @@ class DistilBertFeatureExtractor(MetaModule):
             self,
             input_ids: torch.LongTensor,
             attention_mask: torch.LongTensor,
+            params=None,
             training = False
     ):
 
-        feats = self.bert(input_ids, attention_mask=attention_mask).last_hidden_state[:,0,:]
+        feats = self.bert(input_ids,
+                           attention_mask=attention_mask).last_hidden_state[:,0,:]
 
         bn_feat = self.feat_bn(feats)
 

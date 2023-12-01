@@ -301,7 +301,8 @@ if __name__ == "__main__":
 
         val_ds = [subset[1] for subset in subsets]
 
-        # validation_evaluators = [MultiDatasetClassificationEvaluator([vds], device) for vds in val_ds]
+        validation_evaluator = MECLClassificationEvaluator(val_ds, device)
+
 
         ##### Create models, schedulers, optimizers
         models = []
@@ -346,15 +347,10 @@ if __name__ == "__main__":
         ##### Call train and return expert model
         trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
-        trainer.train_multi_source(zip(*train_dls),val_ds, test_dset)
+        trainer.train_multi_source(zip(*train_dls),validation_evaluator)
         expert_model = trainer.ema_model
         expert_classifier = trainer.ema_cls
 
-        #evaluator = 
-        models_to_evaluate = models + [expert_model]
-        for model in models_to_evaluate:
-            # Loop through models??
-            pass
 
         P, R,F1,acc, labels, logits, loss = None
 

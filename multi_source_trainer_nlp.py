@@ -179,9 +179,9 @@ class MultiSourceTrainer:
 
         return self.args.re_weight*(loss_mse + loss_mse_test) + self.args.uniform_weight*loss_uniform + (loss_test + loss) / 2
 
-    def train_multi_source(self, data_loaders, val_ds, test_ds):
+    def train_multi_source(self, data_loaders, validation_evaluator):
         end = time.time()
-        best_mAP, best_iter = 0, 0
+        best_acc, best_iter, best_f1 = 0, 0, 0
 
         for i, inputs_data in enumerate(data_loaders):
             current_iter = i + 1
@@ -250,20 +250,24 @@ class MultiSourceTrainer:
 
             if current_iter % self.args.save_freq == 0 and dist.get_rank() == 0:
                 #### FILL EVAL HERE
+                (val_loss, acc, P, R, F1), _ = validation_evaluator.evaluate(self.ema_model, self.ema_cls, return_labels_logits=False)                    
 
-                for idx in range(self.num_domains):
-                    save_checkpoint({'state_dict': self.models[idx].state_dict()},
+                if acc > best_acc:
+                    best_acc = acc
+                    best_iter = current_iter
+                    best_f1 = F1
+                    save_checkpoint({'model_state_dict': self.ema_model.state_dict(),
+                                    'classifier_state_dict': self.ema_cls.state_dict()},
                                     fpath=osp.join(self.args.logs_dir,
                                                    'checkpoints',
-                                                   'd{}_checkpoint_{}.pth.tar'.format(idx, current_iter)))
+                                                   'best_ema_checkpoint.pth.tar'))
 
-                save_checkpoint({'state_dict': self.ema_model.state_dict()},
-                                fpath=osp.join(self.args.logs_dir,
-                                               'checkpoints',
-                                               'ema_checkpoint_{}.pth.tar'.format(current_iter)))
+                print('\n * Iteration {:3d}. Current Acc {:4.1%}, Current F1 {:4.1}\n'
+                      .format(current_iter, acc, F1))
 
-                print('\n * Finished iterations {:3d}. Best iter {:3d}, Best mAP {:4.1%} In D_{}.\n'
-                      .format(current_iter, best_iter, best_mAP, flag))
+
+                print('\n * Finished iterations {:3d}. Best iter {:3d}, Best Acc {:4.1%}, F1 Best* {:4.1%}\n'
+                      .format(current_iter, best_iter, best_acc, best_f1))
 
                 end = time.time()
 
