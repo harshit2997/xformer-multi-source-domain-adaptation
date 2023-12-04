@@ -25,6 +25,8 @@ from utils.meters import AverageMeter
 from utils.serialization import save_checkpoint
 from torch.nn import functional as F
 
+from copy import deepcopy
+
 class MultiSourceTrainer:
     def __init__(self, models, classifiers, mlps, model_optimizers, classifier_optimizers, mlp_optimizers, model_schedulers,
                  classifier_schedulers, mlp_schedulers, args):
@@ -146,19 +148,22 @@ class MultiSourceTrainer:
 
         # meta test
         feat.zero_grad()
-        fast_weights_feat = self.gradient_update_parameters(feat, loss, step_size=self.get_alpha(current_iter))
+        old_weights = self.gradient_update_parameters(feat, loss, step_size=self.get_alpha(current_iter))
 
         cls_test = self.classifiers[meta_test_index]
         mlp_test = self.mlps[meta_test_index]
         inputs_test = inputs_list[meta_test_index]
         targets_test = targets_list[meta_test_index]
+        masks_test = masks_list[meta_test_index]
         self.set_requires_grad(cls_test, False)
 
-        feats_test, bn_feat_test = feat(inputs_test, params=fast_weights_feat)
+        feats_test, bn_feat_test = feat(inputs_test, attention_maks = masks_test)        
         logits_test = cls_test(bn_feat_test)
 
         self.set_requires_grad(mlp_test, False)
         project_feature_test = mlp_test(bn_feat_test)
+
+        self.restore_model_weights(feat, old_weights)
 
         loss_ce_test = self.ce_loss(logits_test, targets_test)
         loss_tr_test, _ = self.triplet_loss(feats_test, targets_test)
@@ -320,13 +325,11 @@ class MultiSourceTrainer:
         return mAP, rank1
 
     @staticmethod
-    def gradient_update_parameters(model, loss, params=None, step_size=0.001, first_order=False):
-        if not isinstance(model, MetaModule):
-            raise ValueError('The model must be an instance of `torchmeta.modules.'
-                             'MetaModule`, got `{0}`'.format(type(model)))
+    def gradient_update_parameters(model, loss, step_size=0.001, first_order=False):
 
-        if params is None:
-            params = OrderedDict(model.meta_named_parameters())
+        params_gen = model._named_members(lambda module: module._parameters.items())
+        params = OrderedDict(params_gen)
+        params_copy = deepcopy(params)
 
         grads = torch.autograd.grad(loss, params.values(), create_graph=not first_order)
 
@@ -344,7 +347,23 @@ class MultiSourceTrainer:
                     continue
                 updated_params[name] = param - step_size * grad
 
-        return updated_params
+        # update model
+        params_gen = model._named_members(lambda module: module._parameters.items())
+
+        for (name, param) in params_gen:
+            if name in updated_params:
+                param.data = updated_params[name].data
+
+        return params_copy
+    
+    @staticmethod
+    def restore_model_weights(model, weights):
+
+        params_gen = model._named_members(lambda module: module._parameters.items())
+       
+        for (name, param) in params_gen:
+            if name in weights:
+                param.data = weights[name].data
 
     @torch.no_grad()
     def _batch_shuffle_ddp(self, x):
