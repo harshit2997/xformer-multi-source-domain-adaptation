@@ -252,7 +252,7 @@ class MultiSourceTrainer:
 
             self._logging(current_iter)
 
-            if current_iter % self.args.save_freq == 0 and dist.get_rank() == 0:
+            if current_iter % self.args.save_freq == 0:
                 #### FILL EVAL HERE
                 (val_loss, acc, P, R, F1), _ = validation_evaluator.evaluate(self.ema_model, self.ema_cls, return_labels_logits=False)                    
 
@@ -276,7 +276,7 @@ class MultiSourceTrainer:
                 end = time.time()
 
     def _logging(self, cur_iter):
-        if not (cur_iter % self.args.print_freq == 0 and dist.get_rank() == 0):
+        if not (cur_iter % self.args.print_freq == 0):
             return
         print('Iter: [{}/{}]\t'
               'Time {:.3f} ({:.3f}) (ETA: {:.2f}h)\t'
