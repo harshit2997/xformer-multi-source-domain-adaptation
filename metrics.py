@@ -17,10 +17,10 @@ from datareader import collate_batch_transformer, collate_batch_transformer_with
 def accuracy(logits: np.ndarray, labels: np.ndarray,  texts:List=None) -> float:
     preds = np.argmax(logits, axis=-1)
 
-    if texts is not None:
-        for i in range(labels.shape[0]):
-            if preds[i]!=labels[i]:
-                print (texts[i], preds[i], labels[i])
+    # if texts is not None:
+    #     for i in range(labels.shape[0]):
+    #         if preds[i]!=labels[i]:
+    #             print (texts[i], preds[i], labels[i])
 
     return np.sum(preds == labels).astype(np.float32) / float(labels.shape[0])
 
@@ -85,6 +85,7 @@ class ClassificationEvaluator:
     def evaluate(
             self,
             model: torch.nn.Module,
+            domain : int,
             plot_callbacks: List[Callable] = [],
             return_labels_logits: bool = False,
             return_votes: bool = False
@@ -112,7 +113,7 @@ class ClassificationEvaluator:
                 texts = obatch[5]
 
                 if self.use_labels:
-                    loss, logits = model(input_ids, attention_mask=masks, domains=domains, labels=labels)
+                    loss, logits = model(input_ids, attention_mask=masks, domains=[domain], labels=labels)
                     if len(loss.size()) > 0:
                         loss = loss.mean()
                 else:
