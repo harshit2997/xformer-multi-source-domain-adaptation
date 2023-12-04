@@ -177,7 +177,8 @@ if __name__ == "__main__":
     parser.add_argument("--ensemble_basic", help="Use averaging for the ensembling method", action="store_true")
     parser.add_argument('--optimizer', type=str, default='AdamW')
     parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
-    parser.add_argument('--lr', type=float, default=0.001, help="learning rate of new parameters, for pretrained ")
+    parser.add_argument('--num-instances', type=int, default=1)
+    parser.add_argument('--milestones', nargs='+', type=int, default=[4000, 8000])
 
     parser.add_argument('--warmup-step', type=int, default=1000)
 
@@ -334,7 +335,7 @@ if __name__ == "__main__":
 
         mlps = []
         for j in range(len(train_dls)):
-            mlps.append(MLP(768, 768, 2).cuda())
+            mlps.append(MLP(768, 768).cuda())
 
         mlps_optimizers = []
         for j in range(len(train_dls)):
@@ -360,7 +361,7 @@ if __name__ == "__main__":
         
 
         ##### Call train and return expert model
-        trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
+        trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, mlps_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
         trainer.train_multi_source(zip(*train_dls),validation_evaluator)
         expert_model = trainer.ema_model

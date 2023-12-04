@@ -51,7 +51,7 @@ class Uniformity(nn.Module):
 
 
 class Queue(object):
-    def __init__(self, q_size=4096, feat_dim=512):
+    def __init__(self, q_size=4096, feat_dim=768):
         self.q_size = q_size
         self.feat_dims = feat_dim
         self.ptr = 0

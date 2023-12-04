@@ -19,12 +19,11 @@ from evaluation.evaluators import Evaluator
 from loss import TripletLoss
 from loss.uniformity_loss import Uniformity
 from loss.label_smooth import LabelSmoothingCrossEntropy
-from meta_modules.module import MetaModule
 from utils import accuracy
 from utils.meters import AverageMeter
 from utils.serialization import save_checkpoint
 from torch.nn import functional as F
-
+from tqdm import tqdm
 from copy import deepcopy
 
 class MultiSourceTrainer:
@@ -156,7 +155,7 @@ class MultiSourceTrainer:
         masks_test = masks_list[meta_test_index]
         self.set_requires_grad(cls_test, False)
 
-        feats_test, bn_feat_test = feat(inputs_test, attention_maks = masks_test)        
+        feats_test, bn_feat_test = feat(inputs_test, attention_mask = masks_test)        
         logits_test = cls_test(bn_feat_test)
 
         self.set_requires_grad(mlp_test, False)
@@ -187,7 +186,7 @@ class MultiSourceTrainer:
         end = time.time()
         best_acc, best_iter, best_f1 = 0, 0, 0
 
-        for i, inputs_data in enumerate(data_loaders):
+        for i, inputs_data in tqdm(enumerate(data_loaders)):
             current_iter = i + 1
             self._refresh_information(current_iter, lr=self.model_schedulers[0].get_lr()[0])
             self.data_time.update(time.time() - end)
@@ -309,8 +308,7 @@ class MultiSourceTrainer:
             self.losses_mse = AverageMeter()
             self.precisions_inner = AverageMeter()
             self.precisions_outer = AverageMeter()
-            if dist.get_rank() == 0:
-                print("lr = {} \t".format(lr))
+            print("lr = {} \t".format(lr))
 
     @staticmethod
     def _do_valid(model, test_loader, query, gallery):
@@ -328,8 +326,11 @@ class MultiSourceTrainer:
     def gradient_update_parameters(model, loss, step_size=0.001, first_order=False):
 
         params_gen = model._named_members(lambda module: module._parameters.items())
-        params = OrderedDict(params_gen)
-        params_copy = deepcopy(params)
+        params_copy = deepcopy(OrderedDict(params_gen))
+
+        params_gen = model._named_members(lambda module: module._parameters.items())
+        params_list = [p for p in list(params_gen) if p[1].requires_grad]
+        params = OrderedDict(params_list)
 
         grads = torch.autograd.grad(loss, params.values(), create_graph=not first_order)
 
