@@ -48,9 +48,8 @@ class MultiSourceTrainer:
         self.ema_model = copy.deepcopy(self.models[0])
         self.set_requires_grad(self.ema_model, False)
 
-        self.ema_cls = copy.deepcopy(self.classifiers)
-        for i in range(self.num_domains):
-            self.set_requires_grad(self.ema_cls[i], False)
+        self.ema_cls = copy.deepcopy(self.classifiers[0])
+        self.set_requires_grad(self.ema_cls, False)
 
         self.avg_model = copy.deepcopy(self.models[0])
         self.set_requires_grad(self.avg_model, False)
@@ -241,6 +240,7 @@ class MultiSourceTrainer:
                 self.mlp_optimizers[meta_train_index].step()
                 self.classifiers_optimizers[meta_test_index].step()
 
+                self._update_ema_variables(self.ema_cls, self.classifiers[meta_train_index], 0.999, current_iter)                
                 self._update_ema_variables(self.ema_model, self.models[meta_train_index], 0.999, current_iter)
 
             for idx in range(self.num_domains):
