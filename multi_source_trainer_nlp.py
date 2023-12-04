@@ -263,7 +263,7 @@ class MultiSourceTrainer:
                     best_f1 = F1
                     save_checkpoint({'model_state_dict': self.ema_model.state_dict(),
                                     'classifier_state_dict': self.ema_cls.state_dict()},
-                                    fpath=osp.join(self.args.logs_dir,
+                                    fpath=osp.join(self.args.model_dir,
                                                    'checkpoints',
                                                    'best_ema_checkpoint.pth.tar'))
 
@@ -288,9 +288,9 @@ class MultiSourceTrainer:
               'Loss_mse {:.3f} ({:.3f})\t'
               'Prec_inner {:.2%} ({:.2%})\t'
               'Prec_outer {:.2%} ({:.2%})'
-              .format(cur_iter, self.args.iters,
+              .format(cur_iter, self.args.max_iter,
                       self.batch_time.val, self.batch_time.avg,
-                      (self.args.iters - cur_iter) * self.batch_time.avg / 3600,
+                      (self.args.max_iter - cur_iter) * self.batch_time.avg / 3600,
                       self.data_time.val, self.data_time.avg,
                       self.losses_inner.val, self.losses_inner.avg,
                       self.losses_outer.val, self.losses_outer.avg,
