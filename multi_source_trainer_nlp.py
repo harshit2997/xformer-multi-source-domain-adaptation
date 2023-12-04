@@ -255,6 +255,8 @@ class MultiSourceTrainer:
             if current_iter % self.args.save_freq == 0:
                 #### FILL EVAL HERE
                 (val_loss, acc, P, R, F1), _ = validation_evaluator.evaluate(self.ema_model, self.ema_cls, return_labels_logits=False)                    
+                self.ema_model.train()
+                self.set_requires_grad(self.ema_model, False)
 
                 if acc > best_acc:
                     best_acc = acc
