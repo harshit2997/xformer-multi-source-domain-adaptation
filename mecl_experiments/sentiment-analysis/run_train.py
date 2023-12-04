@@ -22,7 +22,8 @@ from transformers import AdamW
 from transformers import DistilBertTokenizer
 from transformers import AutoModel
 from transformers import get_linear_schedule_with_warmup
-
+import sys
+sys.path.append('.')
 from datareader import MultiDomainSentimentDataset
 from datareader import collate_batch_transformer
 from metrics import MultiDatasetClassificationEvaluator, MECLClassificationEvaluator
@@ -151,7 +152,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_loc", help="Root directory of the dataset", required=True, type=str)
     parser.add_argument("--train_pct", help="Percentage of data to use for training", type=float, default=0.8)
-    parser.add_argument("--n_gpu", help="The number of GPUs to use", type=int, default=0)
+    parser.add_argument("--n_gpu", help="The number of GPUs to use", type=int, default=1)
     parser.add_argument("--log_interval", help="Number of steps to take between logging steps", type=int, default=1)
     parser.add_argument("--warmup_steps", help="Number of steps to warm up Adam", type=int, default=200)
     parser.add_argument("--n_epochs", help="Number of epochs", type=int, default=2)
@@ -174,6 +175,17 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="Name of the model to run", default="VanillaBert")
     parser.add_argument("--indices_dir", help="If standard splits are being used", type=str, default=None)
     parser.add_argument("--ensemble_basic", help="Use averaging for the ensembling method", action="store_true")
+    parser.add_argument('--optimizer', type=str, default='AdamW')
+    parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
+    parser.add_argument('--lr', type=float, default=0.001, help="learning rate of new parameters, for pretrained ")
+
+    parser.add_argument('--warmup-step', type=int, default=1000)
+
+    parser.add_argument('--print-freq', type=int, default=50)
+    parser.add_argument('--save-freq', type=int, default=2000)
+    parser.add_argument('--refresh-freq', type=int, default=1000)
+    parser.add_argument('--margin', type=float, default=0.3, help='margin for the triplet loss with batch hard')
+    
     # alpha scheduler
     parser.add_argument('--alpha-scheduler', type=str, default='constant', choices=['step', 'constant'])
     parser.add_argument('--alpha-milestones', nargs='+', type=int, default=[4000, 8000])
@@ -185,6 +197,9 @@ if __name__ == "__main__":
     parser.add_argument('--q_size', type=int, default=16)
 
     parser.add_argument('--re_weight', type=float, default=0.25)
+
+    # parser.add_argument('--validate', action='store_true', help='validation when training')
+
 
     args = parser.parse_args()
 
@@ -315,7 +330,7 @@ if __name__ == "__main__":
 
         model_schedulers = []
         for j in range(len(train_dls)):
-            model_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
+            model_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, args.max_iter))
 
         mlps = []
         for j in range(len(train_dls)):

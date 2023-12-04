@@ -53,7 +53,7 @@ def configuration():
 
     # optimizer
     parser.add_argument('--optimizer', type=str, default='AdamW')
-    # parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
+    parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
     parser.add_argument('--lr', type=float, default=0.001, help="learning rate of new parameters, for pretrained ")
     # parser.add_argument('--momentum', type=float, default=0.9)
     # parser.add_argument('--weight-decay', type=float, default=5e-4)
@@ -62,12 +62,12 @@ def configuration():
     #                     help='milestones for the learning rate decay')
     # training configs
     # parser.add_argument('--resume', type=str, default='', metavar='PATH')
-    # parser.add_argument('--iters', type=int, default=12000)
+    parser.add_argument('--iters', type=int, default=12000)
     # parser.add_argument('--seed', type=int, default=1)
-    # parser.add_argument('--print-freq', type=int, default=50)
-    # parser.add_argument('--save-freq', type=int, default=2000)
-    # parser.add_argument('--refresh-freq', type=int, default=1000)
-    # parser.add_argument('--margin', type=float, default=0.3, help='margin for the triplet loss with batch hard')
+    parser.add_argument('--print-freq', type=int, default=50)
+    parser.add_argument('--save-freq', type=int, default=2000)
+    parser.add_argument('--refresh-freq', type=int, default=1000)
+    parser.add_argument('--margin', type=float, default=0.3, help='margin for the triplet loss with batch hard')
     # parser.add_argument('--fp16', action='store_true', help="training only")
     # path
     working_dir = osp.dirname(osp.abspath(__file__))
