@@ -318,7 +318,7 @@ if __name__ == "__main__":
         val_ds = [subset[1] for subset in subsets]
 
         validation_evaluator = MECLClassificationEvaluator(val_ds, device)
-
+        test_evalator = MECLClassificationEvaluator(test_dset, device)
 
         ##### Create models, schedulers, optimizers
         models = []
@@ -363,10 +363,23 @@ if __name__ == "__main__":
         ##### Call train and return expert model
         trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, mlps_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
-        trainer.train_multi_source(zip(*train_dls),validation_evaluator)
+        # trainer.train_multi_source(zip(*train_dls),validation_evaluator)
         expert_model = trainer.ema_model
         expert_classifier = trainer.ema_cls
 
+        checkpoint = torch.load("./wandb_local/emnlp_sentiment_experiments/distilbert_ensemble_averaging_individuals/checkpoints/best_ema_checkpoint.pth.tar")
+        
+        expert_model.eval()
+        expert_classifier.eval()
+        
+        expert_model.load_state_dict(checkpoint['model_state_dict']) 
+        expert_classifier.load_state_dict(checkpoint['classifier_state_dict'])
+
+        (test_loss, test_acc, P, R, F1), _ = test_evalator.evaluate(expert_model, expert_classifier, return_labels_logits=False)                    
+
+        print ("Domain: "+str(test_acc))
+
+        break
 
         P, R,F1,acc, labels, logits, loss = None
 
