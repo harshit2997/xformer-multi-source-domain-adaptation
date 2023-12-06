@@ -4,8 +4,6 @@ import os
 import random
 from typing import AnyStr
 from typing import List
-import ipdb
-import krippendorff
 from collections import defaultdict
 from pathlib import Path
 
@@ -370,29 +368,24 @@ if __name__ == "__main__":
         for j in range(len(train_dls)):
             classifiers_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
 
-
-        
-
         ##### Call train and return expert model
         trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, mlps_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
-        # trainer.train_multi_source(zip(*train_dls),validation_evaluator)
+        trainer.train_multi_source(zip(*train_dls),validation_evaluator, domain)
         expert_model = trainer.ema_model
         expert_classifier = trainer.ema_cls
 
-        checkpoint = torch.load("./wandb_local/emnlp_sentiment_experiments/distilbert_ensemble_averaging_individuals/checkpoints/best_ema_checkpoint.pth.tar")
+        # checkpoint = torch.load("./wandb_local/emnlp_sentiment_experiments/distilbert_ensemble_averaging_individuals/checkpoints/best_ema_checkpoint.pth.tar")
         
-        expert_model.eval()
-        expert_classifier.eval()
+        # expert_model.eval()
+        # expert_classifier.eval()
         
-        expert_model.load_state_dict(checkpoint['model_state_dict']) 
-        expert_classifier.load_state_dict(checkpoint['classifier_state_dict'])
+        # expert_model.load_state_dict(checkpoint['model_state_dict']) 
+        # expert_classifier.load_state_dict(checkpoint['classifier_state_dict'])
 
-        (test_loss, test_acc, P, R, F1), _ = test_evalator.evaluate(expert_model, expert_classifier, return_labels_logits=False)                    
+        (loss, acc, P, R, F1), _, (labels, logits) = test_evalator.evaluate(expert_model, expert_classifier, return_labels_logits=True)                    
 
-        print ("Domain "+str(domain)+" : "+str(test_acc))
-
-        P, R,F1,acc, labels, logits, loss = None
+        print ("Domain "+str(domain)+":")
 
         print(f"{domain} F1: {F1}")
         print(f"{domain} Accuracy: {acc}")
@@ -409,9 +402,9 @@ if __name__ == "__main__":
         labels_all.extend(labels)
         logits_all.extend(logits)
 
-        with open(f'{args.model_dir}/{Path(wandb.run.dir).name}/pred_lab.txt', 'a+') as f:
-            for p, l in zip(np.argmax(logits, axis=-1), labels):
-                f.write(f'{domain}\t{p}\t{l}\n')
+        # with open(f'{args.model_dir}/{Path(wandb.run.dir).name}/pred_lab.txt', 'a+') as f:
+        #     for p, l in zip(np.argmax(logits, axis=-1), labels):
+        #         f.write(f'{domain}\t{p}\t{l}\n')
 
     acc, P, R, F1 = acc_f1(logits_all, labels_all)
     # Add to wandb

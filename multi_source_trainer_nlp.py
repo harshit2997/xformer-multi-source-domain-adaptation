@@ -182,7 +182,7 @@ class MultiSourceTrainer:
 
         return self.args.re_weight*(loss_mse + loss_mse_test) + self.args.uniform_weight*loss_uniform + (loss_test + loss) / 2
 
-    def train_multi_source(self, data_loaders, validation_evaluator):
+    def train_multi_source(self, data_loaders, validation_evaluator, domain):
         end = time.time()
         best_acc, best_iter, best_f1 = 0, 0, 0
 
@@ -266,14 +266,14 @@ class MultiSourceTrainer:
                                     'classifier_state_dict': self.ema_cls.state_dict()},
                                     fpath=osp.join(self.args.model_dir,
                                                    'checkpoints',
-                                                   'best_ema_checkpoint.pth.tar'))
+                                                   'best_ema_checkpoint_'+domain+'.pth.tar'))
 
-                print('\n * Iteration {:3d}. Current Acc {:4.1%}, Current F1 {:4.1}\n'
-                      .format(current_iter, acc, F1))
+                print('\n Domain {} Iteration {:3d}. Current Acc {:4.1%}, Current F1 {:4.1}\n'
+                      .format(domain, current_iter, acc, F1))
 
 
-                print('\n * Finished iterations {:3d}. Best iter {:3d}, Best Acc {:4.1%}, F1 Best* {:4.1%}\n'
-                      .format(current_iter, best_iter, best_acc, best_f1))
+                print('\n Domain {} Finished iterations {:3d}. Best iter {:3d}, Best Acc {:4.1%}, F1 Best* {:4.1%}\n'
+                      .format(domain, current_iter, best_iter, best_acc, best_f1))
 
                 end = time.time()
 
