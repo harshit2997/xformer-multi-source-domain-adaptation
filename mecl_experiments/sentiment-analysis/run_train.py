@@ -179,6 +179,7 @@ if __name__ == "__main__":
     parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
     parser.add_argument('--num-instances', type=int, default=1)
     parser.add_argument('--milestones', nargs='+', type=int, default=[4000, 8000])
+    parser.add_argument('--domain-index', type=int, default=-1)
 
     parser.add_argument('--warmup-step', type=int, default=1000)
 
@@ -274,9 +275,21 @@ if __name__ == "__main__":
     labels_all_avg = []
     logits_all_avg = []
 
+    run_all_domains = False
+
+    if args.domain_index <0 or args.domain_index >= len(all_dsets):
+        print ("Running for all domains")
+        run_all_domains = True
+
     for i in range(len(all_dsets)):  # permutation loop
         domain = args.domains[i]
         test_dset = all_dsets[i]
+
+        if (not run_all_domains) and args.domain_index!=i:
+            continue
+
+        print ("Will test on "+str(domain))
+
         # Override the domain IDs
         k = 0
         for j in range(len(all_dsets)):
@@ -318,7 +331,7 @@ if __name__ == "__main__":
         val_ds = [subset[1] for subset in subsets]
 
         validation_evaluator = MECLClassificationEvaluator(val_ds, device)
-        test_evalator = MECLClassificationEvaluator(test_dset, device)
+        test_evalator = MECLClassificationEvaluator([test_dset], device)
 
         ##### Create models, schedulers, optimizers
         models = []
@@ -377,9 +390,7 @@ if __name__ == "__main__":
 
         (test_loss, test_acc, P, R, F1), _ = test_evalator.evaluate(expert_model, expert_classifier, return_labels_logits=False)                    
 
-        print ("Domain: "+str(test_acc))
-
-        break
+        print ("Domain "+str(domain)+" : "+str(test_acc))
 
         P, R,F1,acc, labels, logits, loss = None
 
