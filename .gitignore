@@ -4,4 +4,3 @@ wandb/*
 wandb_local/*
 *.pyc
 *.out
-run_train.sh
