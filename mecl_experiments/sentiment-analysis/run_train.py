@@ -19,7 +19,7 @@ from tqdm import tqdm
 from transformers import AdamW
 from transformers import DistilBertTokenizer
 from transformers import AutoModel
-from transformers import get_linear_schedule_with_warmup
+# from transformers import get_linear_schedule_with_warmup
 import sys
 sys.path.append('.')
 from datareader import MultiDomainSentimentDataset
@@ -33,6 +33,8 @@ from model import DistilBertFeatureExtractor
 from model import *
 from sklearn.model_selection import ParameterSampler
 from multi_source_trainer_nlp import MultiSourceTrainer
+
+from utils.lr_scheduler import WarmupCosineLR
 
 def train(
         model: torch.nn.Module,
@@ -152,8 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_pct", help="Percentage of data to use for training", type=float, default=0.8)
     parser.add_argument("--n_gpu", help="The number of GPUs to use", type=int, default=1)
     parser.add_argument("--log_interval", help="Number of steps to take between logging steps", type=int, default=1)
-    parser.add_argument("--warmup_steps", help="Number of steps to warm up Adam", type=int, default=200)
-    parser.add_argument("--n_epochs", help="Number of epochs", type=int, default=2)
+    # parser.add_argument("--n_epochs", help="Number of epochs", type=int, default=2)
     parser.add_argument("--pretrained_bert", help="Directory with weights to initialize the shared model with", type=str, default=None)
     parser.add_argument("--pretrained_multi_xformer", help="Directory with weights to initialize the domain specific models", type=str, default=None)
     parser.add_argument("--domains", nargs='+', help='A list of domains to use for training', default=[])
@@ -174,12 +175,12 @@ if __name__ == "__main__":
     parser.add_argument("--indices_dir", help="If standard splits are being used", type=str, default=None)
     parser.add_argument("--ensemble_basic", help="Use averaging for the ensembling method", action="store_true")
     parser.add_argument('--optimizer', type=str, default='AdamW')
-    parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
+    # parser.add_argument('--scheduler', type=str, default='step_lr', choices=['step_lr', 'cosine_lr'])
     parser.add_argument('--num-instances', type=int, default=1)
     parser.add_argument('--milestones', nargs='+', type=int, default=[4000, 8000])
     parser.add_argument('--domain-index', type=int, default=-1)
 
-    parser.add_argument('--warmup-step', type=int, default=1000)
+    parser.add_argument('--warmup-steps', type=int, default=1000)
 
     parser.add_argument('--print-freq', type=int, default=50)
     parser.add_argument('--save-freq', type=int, default=2000)
@@ -223,7 +224,7 @@ if __name__ == "__main__":
     batch_size = args.batch_size
     lr = args.lr
     weight_decay = args.weight_decay
-    n_epochs = args.n_epochs
+    # n_epochs = args.n_epochs
 
 
     # wandb initialization
@@ -231,7 +232,7 @@ if __name__ == "__main__":
         project="multisource-sentiment-emnlp",
         name=args.run_name,
         config={
-            "epochs": n_epochs,
+            # "epochs": n_epochs,
             "learning_rate": lr,
             "warmup": args.warmup_steps,
             "weight_decay": weight_decay,
@@ -330,6 +331,7 @@ if __name__ == "__main__":
 
         validation_evaluator = MECLClassificationEvaluator(val_ds, device)
         test_evalator = MECLClassificationEvaluator([test_dset], device)
+        ind_val_evaluators = [MECLClassificationEvaluator([v], device) for v in val_ds]
 
         ##### Create models, schedulers, optimizers
         models = []
@@ -342,7 +344,9 @@ if __name__ == "__main__":
 
         model_schedulers = []
         for j in range(len(train_dls)):
-            model_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, args.max_iter))
+            model_schedulers.append(WarmupCosineLR(model_optimizers[j], max_iters=args.max_iter, warmup_factor=0.01,
+                                          warmup_iters=args.warmup_steps))
+            # model_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, args.max_iter))
 
         mlps = []
         for j in range(len(train_dls)):
@@ -354,7 +358,9 @@ if __name__ == "__main__":
 
         mlps_schedulers = []
         for j in range(len(train_dls)):
-            mlps_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
+            mlps_schedulers.append(WarmupCosineLR(mlps_optimizers[j], max_iters=args.max_iter, warmup_factor=0.01,
+                                          warmup_iters=args.warmup_steps))
+            # mlps_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
         
         classifiers = []
         for j in range(len(train_dls)):
@@ -366,22 +372,25 @@ if __name__ == "__main__":
         
         classifiers_schedulers = []
         for j in range(len(train_dls)):
-            classifiers_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
+            classifiers_schedulers.append(WarmupCosineLR(classifiers_optimizers[j], max_iters=args.max_iter, warmup_factor=0.01,
+                                          warmup_iters=args.warmup_steps))
+            # classifiers_schedulers.append(get_linear_schedule_with_warmup(model_optimizers[j], args.warmup_steps, n_epochs))
 
         ##### Call train and return expert model
         trainer = MultiSourceTrainer(models, classifiers, mlps, model_optimizers, classifiers_optimizers, mlps_optimizers, model_schedulers, classifiers_schedulers,mlps_schedulers, args)
 
-        trainer.train_multi_source(zip(*train_dls),validation_evaluator, domain)
+        trainer.train_multi_source(zip(*train_dls),validation_evaluator, domain, ind_val_evaluators)
         expert_model = trainer.ema_model
         expert_classifier = trainer.ema_cls
 
-        # checkpoint = torch.load("./wandb_local/emnlp_sentiment_experiments/distilbert_ensemble_averaging_individuals/checkpoints/best_ema_checkpoint.pth.tar")
+        checkpoint_path = os.path.join(args.model_dir, 'checkpoints', 'best_ema_checkpoint_'+domain+'.pth.tar')
+        checkpoint = torch.load(checkpoint_path)
         
-        # expert_model.eval()
-        # expert_classifier.eval()
+        expert_model.eval()
+        expert_classifier.eval()
         
-        # expert_model.load_state_dict(checkpoint['model_state_dict']) 
-        # expert_classifier.load_state_dict(checkpoint['classifier_state_dict'])
+        expert_model.load_state_dict(checkpoint['model_state_dict']) 
+        expert_classifier.load_state_dict(checkpoint['classifier_state_dict'])
 
         (loss, acc, P, R, F1), _, (labels, logits) = test_evalator.evaluate(expert_model, expert_classifier, return_labels_logits=True)                    
 

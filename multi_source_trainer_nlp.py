@@ -86,6 +86,15 @@ class MultiSourceTrainer:
         for ema_param, param in zip(ema_model.parameters(), model.parameters()):
             ema_param.data.mul_(alpha).add_(1 - alpha, param.data)
 
+    def _update_ema_variables_acc(self, ema_model, models, alpha, global_step):
+
+        for ema_param in ema_model.parameters():
+            ema_param.data.mul_(alpha)
+
+        for model in models:
+            for ema_param, param in zip(ema_model.parameters(), model.parameters()):
+                ema_param.data.add_((1 - alpha)/len(models), param.data)            
+
     def _update_avg_models(self, avg_model, model_list):
         avg_param_dict = dict()
         for model in model_list:
@@ -182,9 +191,11 @@ class MultiSourceTrainer:
 
         return self.args.re_weight*(loss_mse + loss_mse_test) + self.args.uniform_weight*loss_uniform + (loss_test + loss) / 2
 
-    def train_multi_source(self, data_loaders, validation_evaluator, domain):
+    def train_multi_source(self, data_loaders, validation_evaluator, domain, ind_val_evaluators = None):
         end = time.time()
         best_acc, best_iter, best_f1 = 0, 0, 0
+
+        best_val_acc = None if ind_val_evaluators is None else [0.0 for v in ind_val_evaluators]
 
         for i, inputs_data in tqdm(enumerate(data_loaders)):
             current_iter = i + 1
@@ -232,15 +243,18 @@ class MultiSourceTrainer:
                 self.model_optimizers[meta_train_index].zero_grad()
                 self.classifiers_optimizers[meta_train_index].zero_grad()
                 self.mlp_optimizers[meta_train_index].zero_grad()
-                self.classifiers_optimizers[meta_test_index].zero_grad()
+                # self.classifiers_optimizers[meta_test_index].zero_grad()
                 loss.backward()
                 self.model_optimizers[meta_train_index].step()
                 self.classifiers_optimizers[meta_train_index].step()
                 self.mlp_optimizers[meta_train_index].step()
-                self.classifiers_optimizers[meta_test_index].step()
+                # self.classifiers_optimizers[meta_test_index].step()
 
-                self._update_ema_variables(self.ema_cls, self.classifiers[meta_train_index], 0.999, current_iter)                
-                self._update_ema_variables(self.ema_model, self.models[meta_train_index], 0.999, current_iter)
+                # self._update_ema_variables(self.ema_cls, self.classifiers[meta_train_index], 0.999, current_iter)                
+                # self._update_ema_variables(self.ema_model, self.models[meta_train_index], 0.999, current_iter)
+
+            self._update_ema_variables_acc(self.ema_cls, self.classifiers, 0.99, current_iter)                
+            self._update_ema_variables_acc(self.ema_model, self.models, 0.99, current_iter)
 
             for idx in range(self.num_domains):
                 self.model_schedulers[idx].step()
@@ -274,6 +288,20 @@ class MultiSourceTrainer:
 
                 print('\n Domain {} Finished iterations {:3d}. Best iter {:3d}, Best Acc {:4.1%}, F1 Best* {:4.1%}\n'
                       .format(domain, current_iter, best_iter, best_acc, best_f1))
+
+                if ind_val_evaluators is not None and len(ind_val_evaluators) == 3:
+                    for val_ind in range(len(ind_val_evaluators)):
+                        (_, temp_val_acc, _, _, _), _ = ind_val_evaluators[val_ind].evaluate(
+                                                                                    self.models[val_ind],
+                                                                                    self.classifiers[val_ind],
+                                                                                    return_labels_logits=False)
+
+                        self.models[val_ind].train()
+                        self.classifiers[val_ind].train()
+
+                        best_val_acc[val_ind] = max(temp_val_acc, best_val_acc[val_ind])
+                        print ("Best val acc at index "+str(val_ind)+" = "+str(best_val_acc[val_ind]))
+
 
                 end = time.time()
 
